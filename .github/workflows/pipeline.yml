@@ -1,0 +1,90 @@
+name: Hello World CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only the deployment job receives permission to publish.
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build static site
+        run: |
+          mkdir -p dist
+          cp index.html dist/index.html
+
+      - name: Save build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-site
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tests
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: built-site
+          path: dist/
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Run functional and security unit tests
+        run: python -m unittest -v test_site.py
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download tested build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: built-site
+          path: dist/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Package Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
